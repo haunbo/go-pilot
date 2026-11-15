@@ -14,7 +14,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -145,7 +144,7 @@ func (c *Configuration) LoadEnvironments(prefix string) {
 		c.envOverrides[key] = kv[1]
 		c.mu.Unlock()
 		if err := c.Set(key, kv[1]); err != nil {
-			log.Printf("conf: load environment %s: %v", kv[0], err)
+			logMessage("conf: load environment %s: %v", kv[0], err)
 		}
 	}
 }
@@ -214,30 +213,31 @@ func (c *Configuration) LoadFromDataSource(ds DataSource, unmarshal Unmarshaller
 				}
 				content, err := ds.ReadConfig()
 				if err != nil {
-					log.Printf("conf: reload config: %v", err)
+					logMessage("conf: read config for reload failed: %v", err)
 					continue
 				}
-				if err := c.reflush(content, unmarshal); err != nil {
-					log.Printf("conf: reload config: %v", err)
+				changed, err := c.reflush(content, unmarshal)
+				if err != nil {
+					logMessage("conf: reload config failed: %v", err)
 					continue
 				}
-				log.Print("conf: config reloaded")
+				logMessage("conf: config reloaded, %d key(s) changed", changed)
 			}
 		}
 	}()
 	return nil
 }
 
-func (c *Configuration) reflush(content []byte, unmarshal Unmarshaller) error {
+func (c *Configuration) reflush(content []byte, unmarshal Unmarshaller) (int, error) {
 	conf := make(map[string]any)
 	if err := unmarshal(content, &conf); err != nil {
-		return err
+		return 0, err
 	}
 	c.mu.Lock()
 	changes := c.replaceLocked(conf)
 	c.mu.Unlock()
 	c.notifyChanges(changes)
-	return nil
+	return len(changes), nil
 }
 
 // Close stops watchers and closes all attached data sources.
@@ -420,10 +420,10 @@ func (c *Configuration) Traverse(sep string) map[string]any {
 func (c *Configuration) Debug(sep string) {
 	data, err := json.MarshalIndent(c.Traverse(sep), "", "  ")
 	if err != nil {
-		log.Printf("conf: %v", err)
+		logMessage("conf: %v", err)
 		return
 	}
-	log.Printf("conf:\n%s", data)
+	logMessage("conf:\n%s", data)
 }
 
 func setPath(m map[string]any, delim, key string, val any) {

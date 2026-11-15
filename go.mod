@@ -9,7 +9,6 @@ require (
 	github.com/go-playground/universal-translator v0.18.2
 	github.com/go-playground/validator/v10 v10.30.6
 	github.com/go-viper/mapstructure/v2 v2.5.0
-	github.com/gofrs/flock v0.13.2
 	github.com/labstack/echo/v4 v4.16.5
 	github.com/nacos-group/nacos-sdk-go/v2 v2.3.6
 	github.com/redis/go-redis/v9 v9.23.0

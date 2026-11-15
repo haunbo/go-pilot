@@ -1,4 +1,10 @@
 // Package xerr defines business errors with an HTTP status and a stable code.
+//
+// 本包只覆盖 HTTP 场景，配合 pkg/server/xecho 使用：业务错误携带 HTTP 状态码和
+// 业务 code，由 xecho 的 HTTPErrorHandler 统一渲染成响应信封。
+//
+// gRPC 服务的错误码映射（xerr <-> status/codes）不做统一抽象，由各业务模块按自己
+// 的 code 规范自行实现，避免把两套错误模型强行糅在一起。
 package xerr
 
 import (

@@ -32,6 +32,7 @@ type Config struct {
 	ValidationLocale          string        `json:"validationLocale"`
 
 	logger *xlog.Logger
+	key    string // dotted config key, kept so Server.Reload can re-read it
 }
 
 // DefaultConfig returns sensible defaults for a backend API.
@@ -54,6 +55,7 @@ func DefaultConfig() *Config {
 // RawConfig loads a server config from the dotted key, falling back to defaults.
 func RawConfig(key string) *Config {
 	cfg := DefaultConfig()
+	cfg.key = key
 	if err := conf.UnmarshalKey(key, cfg); err != nil && !errors.Is(err, conf.ErrInvalidKey) {
 		xlog.Warn("load http server config failed, using defaults", xlog.String("key", key), xlog.FieldErr(err))
 	}
@@ -67,6 +69,10 @@ func RawConfig(key string) *Config {
 func StdConfig(name string) *Config {
 	return RawConfig("server." + name)
 }
+
+// Key returns the dotted config key this config was read from, or "" when the
+// config was built by hand.
+func (c *Config) Key() string { return c.key }
 
 // WithLogger sets the logger used by middleware.
 func (c *Config) WithLogger(logger *xlog.Logger) *Config {
@@ -112,7 +118,9 @@ func (c *Config) Build() (*Server, error) {
 		return nil, err
 	}
 	server.Use(requestIDMiddleware())
-	server.Use(recoverMiddleware(c.logger, c.SlowQueryThresholdInMilli))
+	// recoverMiddleware 也负责访问日志，它按请求读取当前配置，
+	// 因此 enableAccessLog / slowQueryThresholdInMilli 改动后无需重启。
+	server.Use(recoverMiddleware(server))
 	server.Use(corsMiddleware(c.AllowOrigins))
 	if c.BodyLimit != "" {
 		server.Use(middleware.BodyLimit(c.BodyLimit))

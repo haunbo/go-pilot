@@ -2,6 +2,7 @@ package xlog
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -17,6 +18,12 @@ var defaultLogger = New(DefaultConfig())
 type Logger struct {
 	ctx  context.Context
 	zlog *zap.Logger
+	// level is the atomic level shared by the logger and all its children, which
+	// allows SetLevel to take effect without rebuilding the zap core.
+	level zap.AtomicLevel
+	// cfg is the snapshot this logger was built from, kept so Reload can report
+	// which settings actually changed.
+	cfg *Config
 }
 
 // New builds a Logger from cfg. A nil cfg uses DefaultConfig.
@@ -24,12 +31,14 @@ func New(cfg *Config) *Logger {
 	if cfg == nil {
 		cfg = DefaultConfig()
 	}
-	core := zapcore.NewCore(newEncoder(cfg), zapcore.AddSync(newWriter(cfg)), zap.NewAtomicLevelAt(parseLevel(cfg.Level)))
+	snapshot := *cfg
+	level := zap.NewAtomicLevelAt(parseLevel(cfg.Level))
+	core := zapcore.NewCore(newEncoder(cfg), zapcore.AddSync(newWriter(cfg)), level)
 	opts := []zap.Option{
 		zap.AddCaller(),
 		zap.AddCallerSkip(1 + cfg.CallerSkip),
 	}
-	return &Logger{zlog: zap.New(core, opts...)}
+	return &Logger{zlog: zap.New(core, opts...), level: level, cfg: &snapshot}
 }
 
 // SetDefault replaces the process-wide logger.
@@ -89,24 +98,63 @@ func newEncoder(cfg *Config) zapcore.Encoder {
 }
 
 func parseLevel(level string) zapcore.Level {
+	lvl, err := parseLevelStrict(level)
+	if err != nil {
+		return zap.InfoLevel
+	}
+	return lvl
+}
+
+// parseLevelStrict is parseLevel for runtime reload: an unknown level is an
+// error instead of a silent fallback to info.
+func parseLevelStrict(level string) (zapcore.Level, error) {
 	switch strings.ToLower(strings.TrimSpace(level)) {
 	case "debug":
-		return zap.DebugLevel
+		return zap.DebugLevel, nil
+	case "info":
+		return zap.InfoLevel, nil
 	case "warn", "warning":
-		return zap.WarnLevel
+		return zap.WarnLevel, nil
 	case "error":
-		return zap.ErrorLevel
+		return zap.ErrorLevel, nil
+	case "dpanic":
+		return zap.DPanicLevel, nil
 	case "panic":
-		return zap.PanicLevel
+		return zap.PanicLevel, nil
 	case "fatal":
-		return zap.FatalLevel
+		return zap.FatalLevel, nil
 	default:
-		return zap.InfoLevel
+		return zap.InfoLevel, fmt.Errorf("xlog: unknown level %q (want debug/info/warn/error/dpanic/panic/fatal)", level)
 	}
 }
 
 // Zap returns the underlying zap.Logger.
 func (l *Logger) Zap() *zap.Logger { return l.zlog }
+
+// SetLevel changes the level of this logger and of every child derived from it.
+// It takes effect immediately and is safe to call while other goroutines log.
+func (l *Logger) SetLevel(level string) error {
+	if l == nil || l.zlog == nil {
+		return errors.New("xlog: logger is not initialized")
+	}
+	lvl, err := parseLevelStrict(level)
+	if err != nil {
+		return err
+	}
+	l.level.SetLevel(lvl)
+	return nil
+}
+
+// Level returns the current level name, for example "info".
+func (l *Logger) Level() string {
+	if l == nil || l.zlog == nil {
+		return ""
+	}
+	return l.level.Level().String()
+}
+
+// SetLevel changes the level of the default logger.
+func SetLevel(level string) error { return defaultLogger.SetLevel(level) }
 
 // With returns a child logger with extra fields.
 func (l *Logger) With(fields ...Field) *Logger {

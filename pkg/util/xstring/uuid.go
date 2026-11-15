@@ -1,3 +1,4 @@
+// Package xstring provides identifier helpers.
 package xstring
 
 import (
@@ -6,7 +7,7 @@ import (
 	"github.com/haunbo/go-pilot/pkg/util/xcrypto"
 )
 
-// GenerateUUID returns a random UUID-like string.
+// GenerateUUID returns a random RFC 4122 version 4 UUID.
 func GenerateUUID() string {
 	buf, err := xcrypto.Bytes(16)
 	if err != nil {
@@ -14,11 +15,6 @@ func GenerateUUID() string {
 	}
 	buf[6] = (buf[6] & 0x0f) | 0x40 // version 4
 	buf[8] = (buf[8] & 0x3f) | 0x80 // variant 10
-	return fmt.Sprintf("%08x-%04x-%04x-%04x-%12x",
+	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
 		buf[0:4], buf[4:6], buf[6:8], buf[8:10], buf[10:16])
-}
-
-// GenerateShortUUID returns the first 8 characters of a UUID.
-func GenerateShortUUID() string {
-	return GenerateUUID()[:8]
 }

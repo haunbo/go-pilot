@@ -2,6 +2,7 @@
 package xlog
 
 import (
+	"errors"
 	"io"
 	"path/filepath"
 
@@ -27,6 +28,8 @@ type Config struct {
 	Format     string    `json:"format"`     // json or text
 	CallerSkip int       `json:"callerSkip"` // extra caller frames to skip
 	Output     io.Writer `json:"-"`          // optional explicit writer (tests, custom sinks)
+
+	key string // dotted config key this snapshot was read from
 }
 
 // DefaultConfig returns production friendly defaults.
@@ -53,8 +56,9 @@ func (c *Config) Filename() string {
 // RawConfig loads a logger config from the dotted key.
 func RawConfig(key string) *Config {
 	cfg := DefaultConfig()
-	if err := conf.UnmarshalKey(key, cfg); err != nil {
-		return cfg
+	cfg.key = key
+	if err := conf.UnmarshalKey(key, cfg); err != nil && !errors.Is(err, conf.ErrInvalidKey) {
+		Warn("load logger config failed, using defaults", String("key", key), FieldErr(err))
 	}
 	return cfg
 }
@@ -63,6 +67,10 @@ func RawConfig(key string) *Config {
 func StdConfig(name string) *Config {
 	return RawConfig("logger." + name)
 }
+
+// Key returns the dotted config key this config was read from, or "" for
+// configs built by hand.
+func (c *Config) Key() string { return c.key }
 
 // Build creates a Logger from the config.
 func (c *Config) Build() *Logger {

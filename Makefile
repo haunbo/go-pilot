@@ -1,6 +1,6 @@
 GO ?= go
 
-.PHONY: help test test-race vet build fmt tidy
+.PHONY: help test test-race vet build build-nocgo fmt tidy
 
 help:
 	@echo "make test       - run unit tests"

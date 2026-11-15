@@ -33,9 +33,18 @@ func requestIDMiddleware() echo.MiddlewareFunc {
 	}
 }
 
-func recoverMiddleware(logger *xlog.Logger, slowQueryThresholdInMilli int64) echo.MiddlewareFunc {
+// recoverMiddleware turns panics into errors and writes the access log.
+//
+// It reads the live config snapshot on every request so enableAccessLog and
+// slowQueryThresholdInMilli take effect as soon as the config is reloaded.
+func recoverMiddleware(s *Server) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) (err error) {
+			cfg := s.Config()
+			if cfg == nil {
+				cfg = DefaultConfig()
+			}
+			logger := cfg.logger
 			start := time.Now()
 			defer func() {
 				rec := recover()
@@ -71,8 +80,8 @@ func recoverMiddleware(logger *xlog.Logger, slowQueryThresholdInMilli int64) ech
 				if rec != nil {
 					extra["stack"] = goroutineStack()
 				}
-				if slowQueryThresholdInMilli > 0 {
-					if cost := time.Since(start).Milliseconds(); cost > slowQueryThresholdInMilli {
+				if cfg.SlowQueryThresholdInMilli > 0 {
+					if cost := time.Since(start).Milliseconds(); cost > cfg.SlowQueryThresholdInMilli {
 						extra["slow"] = cost
 					}
 				}
@@ -83,6 +92,10 @@ func recoverMiddleware(logger *xlog.Logger, slowQueryThresholdInMilli int64) ech
 					} else {
 						logger.Warn(err.Error(), fields...)
 					}
+					return
+				}
+				// 出错一定要记录，访问日志才受开关控制。
+				if !cfg.EnableAccessLog {
 					return
 				}
 				if isHealthPath(c.Request().URL.Path) {
@@ -131,8 +144,7 @@ func isHealthPath(path string) bool {
 }
 
 func errorStatus(err error) int {
-	var httpErr *echo.HTTPError
-	if errors.As(err, &httpErr) {
+	if httpErr, ok := errors.AsType[*echo.HTTPError](err); ok {
 		return httpErr.Code
 	}
 	return xerr.From(err).Status

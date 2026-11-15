@@ -13,8 +13,7 @@ func (s *Server) handleError(err error, c echo.Context) {
 		return
 	}
 
-	var httpErr *echo.HTTPError
-	if errors.As(err, &httpErr) {
+	if httpErr, ok := errors.AsType[*echo.HTTPError](err); ok {
 		status := httpErr.Code
 		message := http.StatusText(status)
 		if msg, ok := httpErr.Message.(string); ok && msg != "" {
